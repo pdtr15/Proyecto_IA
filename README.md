@@ -1,68 +1,91 @@
-# IAPF - Sistema de Detección de Anomalías con IA
+# IAPF - Deteccion de Anomalias con IA
 
-Este proyecto es una estación de control integral que utiliza Visión por Computadora y Redes Neuronales Recurrentes (LSTM) para detectar comportamientos anómalos (robos, caídas, etc.) en tiempo real, ya sea desde una cámara física o capturando la pantalla de la computadora.
+IAPF es una estacion de control con Vision por Computadora + LSTM para detectar comportamientos anormales en tiempo real.
 
-## 🚀 Características Principales
+Soporta:
+- Monitoreo en vivo por camara.
+- Monitoreo por captura de pantalla.
+- Recoleccion de datos etiquetados (`Normal`, `Alerta` u otras categorias).
+- Entrenamiento del modelo desde GUI o por script.
 
-- **Interfaz Dual**: Panel unificado con pestañas para Monitoreo y Entrenamiento.
-- **Detección Multi-Persona**: Utiliza YOLOv8-Pose con tracking para seguir a varios individuos simultáneamente.
-- **IA de Clasificación**: Modelo LSTM que analiza secuencias de movimientos (30 frames) para identificar patrones.
-- **Captura Híbrida**: Cambia instantáneamente entre cámaras web y grabación de pantalla.
-- **Laboratorio de IA**: Gráficas de entrenamiento en tiempo real y estadísticas del dataset.
+## Requisitos
 
----
+- Python 3.9+
+- Dependencias:
 
-## 🛠️ Requisitos Técnicos
+```bash
+pip install -r requirements.txt
+```
 
-Asegúrate de tener instalado Python 3.9 o superior y las siguientes librerías:
+Si no usas `requirements.txt`:
 
 ```bash
 pip install torch torchvision ultralytics opencv-python numpy scikit-learn mss customtkinter pillow tqdm matplotlib
 ```
 
----
+## Archivos principales
 
-## 💻 Instrucciones de Ejecución
+- `main_gui.py`: interfaz completa (monitoreo, entrenamiento, recolector).
+- `launcher_gui.py`: interfaz rapida con botones para produccion y entrenamiento.
+- `produccion.py`: deteccion en vivo desde camara.
+- `produccion_capturapantalla.py`: deteccion en vivo desde pantalla.
+- `colector_datos.py`: recoleccion de secuencias en `keypoints/`.
+- `entrenador.py`: entrenamiento por script con balanceo de clases.
+- `modelo.py`: red LSTM para clasificacion temporal.
 
-### 1. Iniciar la Aplicación Principal
-Para abrir la interfaz gráfica unificada, ejecuta:
+## Uso rapido
+
+### Opcion 1: Interfaz completa
+
 ```bash
 python main_gui.py
 ```
 
-### 2. Cómo Monitorear
-1. En la pestaña **🔍 Monitoreo**, selecciona la fuente de video (Cámara o Pantalla).
-2. Ajusta el **Umbral de Confianza** (recomendado: 0.75).
-3. Haz clic en **Iniciar Monitoreo**.
-4. El sistema mostrará un estado **Verde (Normal)** o **Rojo (Alerta)** según lo detectado.
+Pestanas:
+- `Monitoreo`: elige fuente (camara o pantalla) y umbral.
+- `Entrenamiento`: entrena el modelo con el dataset actual.
+- `Recolector de Datos`:
+  - `Tipo de dato`: `Normal`, `Alerta` u `Otra categoria`.
+  - `Fuente de grabacion`: `Camara 0`, `Camara 1` o `Captura de Pantalla`.
+  - Boton `Iniciar Grabacion` para guardar secuencias.
 
-### 3. Cómo Entrenar el Modelo
-Si tienes nuevos datos en la carpeta `keypoints/`:
-1. Ve a la pestaña **🧠 Entrenamiento**.
-2. Verifica que el dataset se haya detectado correctamente en el resumen estadístico.
-3. Haz clic en **Iniciar Entrenamiento**.
-4. Observa la gráfica de pérdida (Loss); si la línea baja, el modelo está aprendiendo correctamente.
-5. Al finalizar, el nuevo modelo se cargará automáticamente para su uso inmediato.
+### Opcion 2: Lanzador rapido
 
----
+```bash
+python launcher_gui.py
+```
 
-## 📂 Estructura del Proyecto
+Incluye botones para:
+- Deteccion con camara.
+- Deteccion por pantalla.
+- Grabar `Normal`.
+- Grabar `Alerta`.
+- Entrenar modelo.
 
-- `main_gui.py`: Aplicación principal (Interfaz Gráfica).
-- `entrenador.py`: Lógica de entrenamiento optimizada (Early Stopping, Scheduler).
-- `yolov8n-pose.pt`: Modelo de visión de base para detectar puntos clave del cuerpo.
-- `anomaly_model.pt`: Tu modelo entrenado para detectar anomalías específicas.
-- `keypoints/`: Carpeta que contiene los datos de entrenamiento (.npy).
+## Flujo recomendado para entrenar bien
 
----
+1. Graba datos `Normal` y `Alerta` desde `Recolector de Datos`.
+2. Revisa que existan archivos `.npy` en:
+   - `keypoints/Normal`
+   - `keypoints/Alerta`
+3. Ejecuta entrenamiento desde:
+   - Pestana `Entrenamiento` en `main_gui.py`, o
+   - `python entrenador.py`
+4. Verifica que se actualice `anomaly_model.pt`.
+5. Prueba deteccion en `Monitoreo` o scripts de produccion.
 
-## 🧠 ¿Cómo funciona la IA?
+## Mejora aplicada: balanceo de clases
 
-1. **Visión (YOLOv8)**: Detecta 17 puntos clave del cuerpo humano (nariz, ojos, hombros, etc.) en cada frame.
-2. **Memoria (LSTM)**: El sistema guarda los últimos 30 frames de movimiento. La red neuronal LSTM analiza esta secuencia completa para entender "qué está pasando" en lugar de ver solo una imagen fija.
-3. **Decisión**: Si la probabilidad de una anomalía supera el umbral configurado, el sistema dispara una alerta visual.
+Para reducir sesgo cuando hay mas `Normal` que `Alerta`, el entrenamiento ahora usa:
+- `WeightedRandomSampler` (muestreo balanceado por clase).
+- `CrossEntropyLoss(weight=...)` (penaliza mas la clase minoritaria).
 
----
+Esto esta aplicado en:
+- `entrenador.py`
+- entrenamiento interno de `main_gui.py`
 
-## 👥 Equipo de Desarrollo
-Proyecto IAPF - Inteligencia Artificial para la Seguridad Ciudadana.
+## Notas de uso
+
+- Para cerrar una ventana OpenCV, presiona `Q`.
+- En modo captura de pantalla, evita capturar la misma ventana de salida para no generar efecto espejo.
+- Si no existe `anomaly_model.pt`, entrena primero.

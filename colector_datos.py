@@ -1,7 +1,9 @@
 import cv2
 import os
+import time
 import torch
 import numpy as np
+import argparse
 from ultralytics import YOLO
 from collections import deque
 
@@ -10,8 +12,12 @@ OUTPUT_DIR = "keypoints"
 N_FRAMES = 30
 yolo = YOLO("yolov8n-pose.pt")
 
-def recolectar():
-    categoria = input("Ingresa el nombre de la accion a grabar (ej: Normal, Alerta): ").strip()
+def recolectar(categoria=None):
+    if categoria is None:
+        categoria = input("Ingresa el nombre de la accion a grabar (ej: Normal, Alerta): ").strip()
+    else:
+        categoria = categoria.strip()
+
     if not categoria:
         print("Nombre invalido.")
         return
@@ -60,7 +66,7 @@ def recolectar():
 
                 # 2. Guardar secuencia cuando el buffer de ESTA persona este lleno
                 if len(person_buffers[person_id]) == N_FRAMES:
-                    file_path = os.path.join(target_dir, f"p{person_id}_seq_{count}_{np.random.randint(100,999)}.npy")
+                    file_path = os.path.join(target_dir, f"seq_{int(time.time()*1000)}_{count}.npy")
                     np.save(file_path, np.array(person_buffers[person_id]))
                     count += 1
                     # Dibujar un punto por cada persona siendo grabada
@@ -84,4 +90,7 @@ def recolectar():
     print(f"\n[LISTO] Se guardaron {count} secuencias en: {target_dir}")
 
 if __name__ == "__main__":
-    recolectar()
+    parser = argparse.ArgumentParser(description="Recolector de datos para IAPF")
+    parser.add_argument("--categoria", help="Categoria a grabar, por ejemplo Normal o Alerta")
+    args = parser.parse_args()
+    recolectar(args.categoria)

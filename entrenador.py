@@ -2,10 +2,11 @@ import numpy as np
 import os
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, TensorDataset
+from torch.utils.data import DataLoader, TensorDataset, WeightedRandomSampler
 from sklearn.model_selection import train_test_split
 from tqdm import tqdm
 import time
+from modelo import AnomalyLSTM
 
 # ---- Configuracion ----
 KEYPOINTS_DIR = "keypoints"
@@ -55,12 +56,15 @@ if len(X) == 0:
 print(f"\nDataset total cargado: {X.shape[0]} secuencias")
 
 # ---- Dividir train/val ----
-X_train, X_val, y_train, y_val = train_test_split(
-    X, y,
-    test_size=0.2,
-    random_state=42,
-    stratify=y
-)
+if len(categorias) < 2:
+    print("[WARN] Solo hay 1 categoría. Usando split sin estratificar.")
+    X_train, X_val, y_train, y_val = train_test_split(
+        X, y, test_size=0.2, random_state=42
+    )
+else:
+    X_train, X_val, y_train, y_val = train_test_split(
+        X, y, test_size=0.2, random_state=42, stratify=y
+    )
 
 # ---- Preparar DataLoaders ----
 X_train_t = torch.tensor(X_train, dtype=torch.float32)
@@ -68,42 +72,32 @@ y_train_t = torch.tensor(y_train, dtype=torch.long)
 X_val_t   = torch.tensor(X_val,   dtype=torch.float32)
 y_val_t   = torch.tensor(y_val,   dtype=torch.long)
 
-train_loader = DataLoader(TensorDataset(X_train_t, y_train_t), batch_size=BATCH_SIZE, shuffle=True)
+class_counts = np.bincount(y_train, minlength=len(categorias))
+class_weights = len(y_train) / (len(categorias) * np.maximum(class_counts, 1))
+sample_weights = class_weights[y_train]
+sampler = WeightedRandomSampler(
+    weights=torch.tensor(sample_weights, dtype=torch.double),
+    num_samples=len(sample_weights),
+    replacement=True
+)
+
+print("\nBalanceo aplicado al entrenamiento:")
+for categoria, count, weight in zip(categorias, class_counts, class_weights):
+    print(f"  - {categoria}: {count} muestras train | peso {weight:.3f}")
+
+train_loader = DataLoader(TensorDataset(X_train_t, y_train_t), batch_size=BATCH_SIZE, sampler=sampler)
 val_loader   = DataLoader(TensorDataset(X_val_t, y_val_t), batch_size=BATCH_SIZE, shuffle=False)
-
-# ---- Modelo LSTM Mejorado ----
-class AnomalyLSTM(nn.Module):
-    def __init__(self, n_categorias):
-        super().__init__()
-        self.lstm = nn.LSTM(
-            input_size=34,
-            hidden_size=128,
-            num_layers=2,
-            batch_first=True,
-            dropout=0.4 # Aumentado para reducir overfitting
-        )
-        self.clasificador = nn.Sequential(
-            nn.Linear(128, 64),
-            nn.ReLU(),
-            nn.Dropout(0.4),
-            nn.Linear(64, n_categorias)
-        )
-
-    def forward(self, x):
-        # x: (batch, seq_len, input_size)
-        out, _ = self.lstm(x)
-        # Tomamos el ultimo estado de la secuencia
-        return self.clasificador(out[:, -1, :])
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Entrenando en: {device}")
 
 modelo = AnomalyLSTM(n_categorias=len(categorias)).to(device)
 optimizer = torch.optim.Adam(modelo.parameters(), lr=LEARNING_RATE, weight_decay=1e-5)
-criterion = nn.CrossEntropyLoss()
+class_weights_t = torch.tensor(class_weights, dtype=torch.float32).to(device)
+criterion = nn.CrossEntropyLoss(weight=class_weights_t)
 
 # Scheduler para reducir LR si el loss de val no baja
-scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3, verbose=True)
+scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3)
 
 # ---- Entrenamiento ----
 print("\nIniciando entrenamiento...")
